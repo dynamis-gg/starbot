@@ -1,10 +1,10 @@
 #![allow(unused)]
 
-mod interaction;
+mod command;
 mod model;
-mod train;
 
 use eyre::WrapErr;
+use poise::serenity_prelude::UserId;
 use sea_orm::{Database, DbConn};
 use serenity::async_trait;
 use serenity::model::application::interaction::{
@@ -16,48 +16,9 @@ use serenity::model::id::GuildId;
 use serenity::prelude::*;
 use std::env;
 
-use interaction::Response;
-
-struct Bot {
-    db: DbConn,
-    train_guild_id: GuildId,
-}
-
+/*
 #[async_trait]
 impl EventHandler for Bot {
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        match interaction {
-            Interaction::ApplicationCommand(command) => {
-                let result = match command.data.name.as_str() {
-                    "train" => train::handle_command(&self.db, &ctx, &command).await,
-                    name => Err(eyre::eyre!("Unknown command name: {}", name)),
-                };
-
-                let content = match result {
-                    Ok(Response::Ephemeral(s)) => s,
-                    Err(e) => {
-                        format!("Error occurred processing command: {}", e)
-                    }
-                };
-
-                if let Err(why) = command
-                    .create_interaction_response(&ctx.http, |response| {
-                        response
-                            .kind(InteractionResponseType::ChannelMessageWithSource)
-                            .interaction_response_data(|message| {
-                                message.content(content).flags(MessageFlags::EPHEMERAL)
-                            })
-                    })
-                    .await
-                {
-                    eprintln!("Error responding to slash command: {}", why);
-                }
-            }
-            Interaction::MessageComponent(_) => {}
-            _ => {}
-        }
-    }
-
     async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
         println!(
             "Joined {} guild {} ({})",
@@ -79,38 +40,71 @@ impl EventHandler for Bot {
         println!("{} is connected!", ready.user.name);
     }
 }
+*/
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN")
-        .expect("Expected a token in the environment variable DISCORD_TOKEN");
-    let app_id = env::var("DISCORD_APPLICATION_ID")
+        .wrap_err("Expected a token in the environment variable DISCORD_TOKEN")?;
+    let app_id: u64 = env::var("DISCORD_APPLICATION_ID")
         .map_err(eyre::Report::new)
         .and_then(|s| s.parse().map_err(eyre::Report::new))
-        .expect("Expected a token in the environment variable DISCORD_APPLICATION_ID");
-    let train_guild_id: u64 = env::var("TRAIN_GUILD_ID")
+        .wrap_err("Expected a token in the environment variable DISCORD_APPLICATION_ID")?;
+    let train_guild_id = env::var("TRAIN_GUILD_ID")
         .map_err(eyre::Report::new)
         .and_then(|s| s.parse().map_err(eyre::Report::new))
-        .expect("Expected a token in the environment variable TRAIN_GUILD_ID");
+        .wrap_err("Expected a token in the environment variable TRAIN_GUILD_ID")
+        .map(GuildId)?;
     let db_url = env::var("DATABASE_URL")
-        .expect("Expected a database URL in the environment variable DATABASE_URL");
+        .wrap_err("Expected a database URL in the environment variable DATABASE_URL")?;
+    let owner_id = env::var("OWNER_ID")
+        .map_err(eyre::Report::new)
+        .and_then(|s| s.parse().map_err(eyre::Report::new))
+        .wrap_err("Expected an owner ID in the environment variable OWNER_ID")
+        .map(UserId)?;
 
     let db = Database::connect(&*db_url).await?;
 
     // Build our client.
-    let mut client = Client::builder(token, GatewayIntents::GUILDS)
-        .application_id(app_id)
-        .event_handler(Bot {
-            db,
-            train_guild_id: GuildId(train_guild_id),
+    let data = command::Data { db, train_guild_id };
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: command::all(),
+            owners: std::collections::HashSet::from([owner_id]),
+            prefix_options: poise::PrefixFrameworkOptions {
+                prefix: Some("!".to_owned()),
+                mention_as_prefix: true,
+                case_insensitive_commands: true,
+                ..Default::default()
+            },
+            ..Default::default()
         })
-        .await
-        .wrap_err("Error creating client")?;
+        .token(token)
+        .intents(GatewayIntents::DIRECT_MESSAGES)
+        .user_data_setup(move |ctx, _r, framework| {
+            Box::pin(async move {
+                eprintln!("Initializing...");
+                let channel = owner_id.create_dm_channel(ctx).await?;
+                channel
+                    .send_message(ctx, |m| m.content("Greetings, owner! I wish only to hear your words, share your feelings, know your thoughts."))
+                    .await?;
+                data.train_guild_id
+                    .set_application_commands(&ctx.http, |b| {
+                        *b = poise::builtins::create_application_commands(
+                            &*framework.options().commands,
+                        );
+                        b
+                    })
+                    .await?;
+                eprintln!(
+                    "Set application commands for guild {}",
+                    data.train_guild_id.0
+                );
+                Ok(data)
+            })
+        });
 
-    // Finally, start a single shard, and start listening to events.
-    //
-    // Shards will automatically attempt to reconnect, and will perform
-    // exponential backoff until it reconnects.
-    Ok(client.start().await?)
+    framework.run().await?;
+    Ok(())
 }

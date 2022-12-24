@@ -1,8 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use eyre::{bail, ensure, eyre, WrapErr};
 use sea_orm::entity::prelude::*;
-use sea_orm::ActiveValue::NotSet;
-use sea_orm::{ConnectionTrait, DeriveActiveEnum, EnumIter, Set};
+use sea_orm::sea_query::{self, DynIden, SeaRc};
+use sea_orm::{ConnectionTrait, DeriveActiveEnum, EnumIter, NotSet, Set, Unchanged};
 use serenity::async_trait;
 use serenity::builder::{
     CreateApplicationCommandOption, CreateButton, CreateComponents, CreateEmbed,
@@ -18,7 +18,7 @@ use sqlx::{query, query_as, SqliteExecutor};
 use std::collections::HashMap;
 use std::convert::AsRef;
 use strum::IntoEnumIterator;
-use strum_macros::{AsRefStr, Display, EnumString, IntoStaticStr};
+use strum_macros::{AsRefStr, Display, EnumString, FromRepr, IntoStaticStr};
 use url::Url;
 
 use super::{Expac, World};
@@ -142,7 +142,16 @@ impl Model {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_many = "super::monitor::Entity")]
+    Monitor,
+}
+
+impl Related<super::monitor::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Monitor.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}
 
@@ -170,12 +179,71 @@ pub async fn find_or_create(
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, DeriveActiveEnum, EnumIter)]
-#[sea_orm(rs_type = "i8", db_type = "Integer")]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Display, Debug, EnumIter, FromRepr)]
 #[repr(i8)]
 pub enum Status {
     Unknown = 0,
     Waiting = 1,
     Scouted = 2,
     Running = 3,
+}
+
+#[derive(Debug, Iden)]
+pub struct StatusEnum;
+
+impl ActiveEnum for Status {
+    type Value = i8;
+
+    fn name() -> sea_orm::DynIden {
+        SeaRc::new(StatusEnum)
+    }
+
+    fn to_value(&self) -> Self::Value {
+        *self as Self::Value
+    }
+
+    fn try_from_value(v: &Self::Value) -> Result<Self, DbErr> {
+        Self::from_repr(*v).ok_or_else(|| DbErr::Type(format!("invalid Status value: {}", v)))
+    }
+
+    fn db_type() -> ColumnDef {
+        ColumnType::Integer.def()
+    }
+}
+
+impl From<Status> for sea_orm::Value {
+    fn from(expac: Status) -> Self {
+        expac.into_value().into()
+    }
+}
+
+impl sea_orm::TryGetable for Status {
+    fn try_get(res: &QueryResult, pre: &str, col: &str) -> Result<Self, sea_orm::TryGetError> {
+        let value = <<Self as ActiveEnum>::Value as sea_orm::TryGetable>::try_get(res, pre, col)?;
+        <Self as sea_orm::ActiveEnum>::try_from_value(&value).map_err(sea_orm::TryGetError::DbErr)
+    }
+}
+
+impl sea_query::ValueType for Status {
+    fn try_from(v: Value) -> Result<Self, sea_query::ValueTypeErr> {
+        let value =
+            <<Self as sea_orm::ActiveEnum>::Value as sea_orm::sea_query::ValueType>::try_from(v)?;
+        <Self as sea_orm::ActiveEnum>::try_from_value(&value)
+            .map_err(|_| sea_orm::sea_query::ValueTypeErr)
+    }
+
+    fn type_name() -> String {
+        <<Self as sea_orm::ActiveEnum>::Value as sea_orm::sea_query::ValueType>::type_name()
+    }
+
+    fn array_type() -> sea_query::ArrayType {
+        unimplemented!("Array of enum is not supported.")
+    }
+
+    fn column_type() -> sea_query::ColumnType {
+        <Self as sea_orm::ActiveEnum>::db_type()
+            .get_column_type()
+            .to_owned()
+            .into()
+    }
 }

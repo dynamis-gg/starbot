@@ -1,16 +1,20 @@
 #![allow(unused)]
 
+mod interaction;
 mod train;
-
-use std::env;
 
 use eyre::WrapErr;
 use serenity::async_trait;
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
+use serenity::model::application::interaction::{
+    Interaction, InteractionResponseType, MessageFlags,
+};
 use serenity::model::gateway::Ready;
 use serenity::model::guild::Guild;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
+use std::env;
+
+use interaction::Response;
 
 struct Bot {
     database: sqlx::SqlitePool,
@@ -28,7 +32,7 @@ impl EventHandler for Bot {
                 };
 
                 let content = match result {
-                    Ok(s) => s,
+                    Ok(Response::Ephmeral(s)) => s,
                     Err(e) => {
                         format!("Error occurred processing command: {}", e)
                     }
@@ -38,7 +42,9 @@ impl EventHandler for Bot {
                     .create_interaction_response(&ctx.http, |response| {
                         response
                             .kind(InteractionResponseType::ChannelMessageWithSource)
-                            .interaction_response_data(|message| message.content(content))
+                            .interaction_response_data(|message| {
+                                message.content(content).flags(MessageFlags::EPHEMERAL)
+                            })
                     })
                     .await
                 {

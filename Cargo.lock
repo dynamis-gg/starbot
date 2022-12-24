@@ -1339,6 +1339,7 @@ dependencies = [
  "sqlx-rt",
  "stringprep",
  "thiserror",
+ "time",
  "tokio-stream",
  "url",
  "webpki-roots",
@@ -1384,7 +1385,9 @@ dependencies = [
  "eyre",
  "serenity",
  "sqlx",
+ "time",
  "tokio",
+ "url",
 ]
 
 [[package]]

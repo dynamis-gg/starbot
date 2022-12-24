@@ -4,15 +4,14 @@ use eyre::{bail, ensure, eyre, WrapErr};
 use serenity::async_trait;
 use serenity::builder::CreateApplicationCommandOption;
 use serenity::model::application::command::{CommandOptionType, CommandType};
-use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
-use serenity::model::application::interaction::{Interaction, InteractionResponseType};
-use serenity::model::channel::ChannelType;
-use serenity::model::guild::Guild;
-use serenity::model::id::GuildId;
-use serenity::model::permissions::Permissions;
-use serenity::model::prelude::interaction::application_command::{
-    CommandDataOption, CommandDataOptionValue,
+use serenity::model::application::interaction::application_command::{
+    ApplicationCommandInteraction, CommandDataOption, CommandDataOptionValue,
 };
+use serenity::model::application::interaction::{Interaction, InteractionResponseType};
+use serenity::model::channel::{ChannelType, PartialChannel};
+use serenity::model::guild::Guild;
+use serenity::model::id::{ChannelId, GuildId, MessageId};
+use serenity::model::permissions::Permissions;
 use serenity::prelude::*;
 
 pub async fn init(database: &sqlx::SqlitePool, ctx: &Context, guild: &Guild) {
@@ -84,13 +83,13 @@ pub async fn handle_command(
         "Expected command option to be a SubCommand"
     );
     match &*opt.name {
-        "add" => add_train(database, ctx, interaction, opt).await,
-        "remove" => remove_train(database, ctx, interaction, opt).await,
+        "add" => handle_add(database, ctx, interaction, opt).await,
+        "remove" => handle_remove(database, ctx, interaction, opt).await,
         name => bail!("Unexpected SubCommand name: {}", name),
     }
 }
 
-async fn add_train(
+async fn handle_add(
     database: &sqlx::SqlitePool,
     ctx: &Context,
     interaction: &ApplicationCommandInteraction,
@@ -116,34 +115,17 @@ async fn add_train(
     else {
         bail!("Invalid channel: {:#?}", params.get("channel"))
     };
-    let Some(GuildId(guild_id)) = interaction.guild_id else{
+    let Some(guild_id) = interaction.guild_id else{
         bail! ("Command must be inside a server");
     };
-    let guild_id_s = guild_id as i64;
 
     let mut tx = database.begin().await?;
-    let existing = sqlx::query!(
-        "SELECT COUNT(*) as count FROM trains WHERE guild_id = ? AND world = ? AND expac = ?",
-        guild_id_s,
-        world,
-        expac,
-    )
-    .fetch_one(&mut tx)
-    .await?
-    .count;
-
-    ensure!(
-        existing == 0,
-        "A {} train on {} already exists.",
-        expac,
-        world
-    );
-
+    let ok = add_train(&mut tx, ctx, interaction, guild_id, expac, world, channel).await?;
     tx.commit().await?;
-    Ok("Success".to_owned())
+    Ok(ok)
 }
 
-async fn remove_train(
+async fn handle_remove(
     database: &sqlx::SqlitePool,
     ctx: &Context,
     interaction: &ApplicationCommandInteraction,
@@ -164,11 +146,88 @@ async fn remove_train(
     else {
         bail!("Invalid expac: {:#?}", params.get("expac"))
     };
-    let Some(GuildId(guild_id)) = interaction.guild_id else{
+    let Some(guild_id) = interaction.guild_id else{
         bail! ("Command must be inside a server");
     };
-    let guild_id_s = guild_id as i64;
 
+    remove_train(database, ctx, interaction, guild_id, world, expac).await
+}
+
+#[derive(Clone, Debug)]
+struct Train {
+    guild_id: GuildId,
+    world: String,
+    expac: String,
+    message_id: MessageId,
+    channel_id: ChannelId,
+    status: TrainStatus,
+    scout_map: Option<url::Url>,
+    last_run: Option<time::OffsetDateTime>,
+}
+
+impl Train {}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+enum TrainStatus {
+    Unknown,
+    Waiting,
+    Scouted,
+    Running,
+}
+
+async fn add_train(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    ctx: &Context,
+    interaction: &ApplicationCommandInteraction,
+    guild_id: GuildId,
+    expac: &String,
+    world: &String,
+    channel: &PartialChannel,
+) -> Result<String, eyre::ErrReport> {
+    let guild_id_s = guild_id.0 as i64;
+    let existing = sqlx::query!(
+        "SELECT COUNT(*) as count FROM trains WHERE guild_id = ? AND world = ? AND expac = ?",
+        guild_id_s,
+        world,
+        expac,
+    )
+    .fetch_one(tx)
+    .await?
+    .count;
+
+    ensure!(
+        existing == 0,
+        "A {} train on {} already exists.",
+        expac,
+        world
+    );
+
+    let m = channel.id.send_message(&ctx.http, |m|
+        m.content("Please wait... building train... it's safe to delete this message if construction fails")
+    ).await?;
+    let _train = Train {
+        guild_id,
+        world: world.clone(),
+        expac: expac.clone(),
+        channel_id: channel.id,
+        message_id: m.id,
+        status: TrainStatus::Unknown,
+        scout_map: None,
+        last_run: None,
+    };
+
+    Ok("Success!".to_owned())
+}
+
+async fn remove_train(
+    database: &sqlx::Pool<sqlx::Sqlite>,
+    ctx: &Context,
+    interaction: &ApplicationCommandInteraction,
+    guild_id: GuildId,
+    world: &String,
+    expac: &String,
+) -> Result<String, eyre::ErrReport> {
+    let guild_id_s = guild_id.0 as i64;
     let affected = sqlx::query!(
         "DELETE FROM trains WHERE guild_id = ? AND world = ? AND expac = ?",
         guild_id_s,

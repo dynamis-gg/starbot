@@ -20,29 +20,33 @@ struct Bot {
 #[async_trait]
 impl EventHandler for Bot {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        if let Interaction::ApplicationCommand(command) = interaction {
-            let result = match command.data.name.as_str() {
-                "train" => train::handle_command(&self.database, &ctx, &command).await,
-                name => Err(eyre::eyre!("Unknown command name: {}", name)),
-            };
+        match interaction {
+            Interaction::ApplicationCommand(command) => {
+                let result = match command.data.name.as_str() {
+                    "train" => train::handle_command(&self.database, &ctx, &command).await,
+                    name => Err(eyre::eyre!("Unknown command name: {}", name)),
+                };
 
-            let content = match result {
-                Ok(s) => s,
-                Err(e) => {
-                    format!("Error occurred processing command: {}", e)
+                let content = match result {
+                    Ok(s) => s,
+                    Err(e) => {
+                        format!("Error occurred processing command: {}", e)
+                    }
+                };
+
+                if let Err(why) = command
+                    .create_interaction_response(&ctx.http, |response| {
+                        response
+                            .kind(InteractionResponseType::ChannelMessageWithSource)
+                            .interaction_response_data(|message| message.content(content))
+                    })
+                    .await
+                {
+                    eprintln!("Error responding to slash command: {}", why);
                 }
-            };
-
-            if let Err(why) = command
-                .create_interaction_response(&ctx.http, |response| {
-                    response
-                        .kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|message| message.content(content))
-                })
-                .await
-            {
-                eprintln!("Error responding to slash command: {}", why);
             }
+            Interaction::MessageComponent(_) => {}
+            _ => {}
         }
     }
 
@@ -54,10 +58,12 @@ impl EventHandler for Bot {
             guild.name
         );
         if guild.id == self.train_guild_id {
-            println!("Initializing train commands");
-            train::init(&self.database, &ctx, &guild).await;
+            eprintln!("Initializing train commands");
+            if let Err(e) = train::init(&self.database, &ctx, &guild).await {
+                eprintln!("Error initializing train commands: {}", e);
+            }
         } else {
-            println!("Not the train guild; skipping train commands")
+            eprintln!("Not the train guild; skipping train commands")
         }
     }
 
@@ -71,6 +77,10 @@ async fn main() -> eyre::Result<()> {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN")
         .expect("Expected a token in the environment variable DISCORD_TOKEN");
+    let app_id = env::var("DISCORD_APPLICATION_ID")
+        .map_err(eyre::Report::new)
+        .and_then(|s| s.parse().map_err(eyre::Report::new))
+        .expect("Expected a token in the environment variable DISCORD_APPLICATION_ID");
     let train_guild_id: u64 = env::var("TRAIN_GUILD_ID")
         .map_err(eyre::Report::new)
         .and_then(|s| s.parse().map_err(eyre::Report::new))
@@ -94,7 +104,8 @@ async fn main() -> eyre::Result<()> {
         .wrap_err("Couldn't run database migrations")?;
 
     // Build our client.
-    let mut client = Client::builder(token, GatewayIntents::empty())
+    let mut client = Client::builder(token, GatewayIntents::GUILDS)
+        .application_id(app_id)
         .event_handler(Bot {
             database,
             train_guild_id: GuildId(train_guild_id),

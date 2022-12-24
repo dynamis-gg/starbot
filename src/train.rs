@@ -3,20 +3,21 @@ use std::convert::AsRef;
 
 use eyre::{bail, ensure, eyre, WrapErr};
 use serenity::async_trait;
-use serenity::builder::{CreateComponents,CreateApplicationCommandOption};
+use serenity::builder::{CreateApplicationCommandOption, CreateButton, CreateComponents};
 use serenity::model::application::command::{CommandOptionType, CommandType};
 use serenity::model::application::interaction::application_command::{
     ApplicationCommandInteraction, CommandDataOption, CommandDataOptionValue,
 };
+use serenity::model::prelude::component::{Button, ButtonStyle};
 use serenity::model::prelude::*;
 use serenity::prelude::*;
 use sqlx::{query, query_as};
 use strum::IntoEnumIterator;
-use strum_macros::{EnumIter, EnumString, IntoStaticStr, AsRefStr, Display};
+use strum_macros::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
+use time::{Duration, OffsetDateTime};
 use url::Url;
-use time::{OffsetDateTime, Duration};
 
-pub async fn init(database: &sqlx::SqlitePool, ctx: &Context, guild: &Guild) {
+pub async fn init(database: &sqlx::SqlitePool, ctx: &Context, guild: &Guild) -> eyre::Result<()> {
     let mut world_option = CreateApplicationCommandOption::default();
     world_option
         .name("world")
@@ -64,7 +65,8 @@ pub async fn init(database: &sqlx::SqlitePool, ctx: &Context, guild: &Guild) {
                     .add_sub_option(world_option)
                     .add_sub_option(expac_option)
             })
-    });
+    }).await?;
+    Ok(())
 }
 
 pub async fn handle_command(
@@ -160,8 +162,9 @@ enum TrainStatus {
     Running,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Display, Debug)]
-#[derive(sqlx::Type, EnumIter, EnumString, AsRefStr)]
+#[derive(
+    Copy, Clone, PartialEq, Eq, Hash, Display, Debug, sqlx::Type, EnumIter, EnumString, AsRefStr,
+)]
 enum World {
     Halicarnassus,
     Maduin,
@@ -169,19 +172,20 @@ enum World {
     Seraph,
 }
 
-#[derive(Copy, Clone, PartialEq, Hash, Display, Debug)]
-#[derive(sqlx::Type, EnumIter, EnumString, AsRefStr)]
+#[derive(
+    Copy, Clone, PartialEq, Hash, Display, Debug, sqlx::Type, EnumIter, EnumString, AsRefStr,
+)]
 #[repr(i8)]
 enum Expac {
-    #[strum(to_string="A Realm Reborn")]
+    #[strum(to_string = "A Realm Reborn")]
     ARR = 2,
-    #[strum(to_string="Heavensward")]
+    #[strum(to_string = "Heavensward")]
     HW = 3,
-    #[strum(to_string="Stormblood")]
+    #[strum(to_string = "Stormblood")]
     StB = 5,
-    #[strum(to_string="Shadowbringers")]
+    #[strum(to_string = "Shadowbringers")]
     ShB = 6,
-    #[strum(to_string="Endwalker")]
+    #[strum(to_string = "Endwalker")]
     EW = 7,
 }
 
@@ -201,7 +205,7 @@ impl Train {
     fn begin(&mut self) {
         self.status = TrainStatus::Running;
     }
-    fn scouted(&mut self, scout_map: Option<Url>){
+    fn scouted(&mut self, scout_map: Option<Url>) {
         self.scout_map = scout_map;
         self.status = TrainStatus::Scouted;
     }
@@ -212,6 +216,8 @@ impl Train {
     }
     fn lost(&mut self) {
         self.status = TrainStatus::Unknown;
+        self.scout_map = None;
+        self.last_run = None;
     }
     fn set_scout_map(&mut self, scout_map: Url) {
         self.scout_map = Some(scout_map);
@@ -279,31 +285,97 @@ impl Train {
             self.status,
             scout_map,
             self.last_run,
-        ) 
+        )
         .execute(executor)
         .await?;
         Ok(())
     }
 
     fn message_content(&self) -> String {
-        let mut content = format!("**{} {} Train**\n\nStatus: {}", self.world, self.expac, self.status);
+        let mut content = format!(
+            "**{} {} Train**\n\nStatus: {}",
+            self.world, self.expac, self.status
+        );
         if let Some(end_time) = self.last_run {
-            content+= &*format!("\nLast run completed at: <t:{}:f>", end_time.unix_timestamp());
+            content += &*format!(
+                "\nLast run completed at: <t:{}:f>",
+                end_time.unix_timestamp()
+            );
             if self.status == TrainStatus::Waiting {
-                let force_time = end_time + 6*Duration::HOUR;
+                let force_time = end_time + 6 * Duration::HOUR;
                 if force_time < OffsetDateTime::now_utc() {
                     content += &*format!("\nForce at: <t:{}:f>", force_time.unix_timestamp());
                 } else {
-                    content+=&*format!("\n**Forced at:** <t:{}:f>", force_time.unix_timestamp());
+                    content += &*format!("\n**Forced at:** <t:{}:f>", force_time.unix_timestamp());
                 }
             }
         }
         content
     }
 
-    fn message_components(&self) -> CreateComponents{
+    fn message_components(&self) -> CreateComponents {
         let mut components = CreateComponents::default();
+        components.create_action_row(|row| {
+            match self.status {
+                TrainStatus::Waiting => {
+                    row.create_button(Self::create_scout_button);
+                    row.create_button(Self::create_run_button);
+                    row.create_button(Self::create_lost_button);
+                }
+                TrainStatus::Scouted => {
+                    row.create_button(Self::create_run_button);
+                    row.create_button(Self::create_lost_button);
+                }
+                TrainStatus::Running => {
+                    row.create_button(Self::create_done_button);
+                    row.create_button(Self::create_lost_button);
+                }
+                TrainStatus::Unknown => {
+                    row.create_button(Self::create_scout_button);
+                    row.create_button(Self::create_run_button);
+                    row.create_button(Self::create_done_button);
+                }
+            };
+            row
+        });
+        if let Some(url) = &self.scout_map {
+            components.create_action_row(|row| {
+                row.create_button(|button| Self::create_scout_link(&url, button))
+            });
+        }
         components
+    }
+
+    fn create_scout_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
+        button
+            .style(ButtonStyle::Primary)
+            .label("Scout")
+            .custom_id("scout")
+    }
+    fn create_run_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
+        button
+            .style(ButtonStyle::Primary)
+            .label("Start")
+            .custom_id("run")
+    }
+    fn create_done_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
+        button
+            .style(ButtonStyle::Success)
+            .label("Complete")
+            .custom_id("done")
+    }
+    fn create_lost_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
+        button
+            .style(ButtonStyle::Secondary)
+            .label("Lost")
+            .custom_id("lost")
+    }
+
+    fn create_scout_link<'b>(url: &Url, button: &'b mut CreateButton) -> &'b mut CreateButton {
+        button
+            .style(ButtonStyle::Link)
+            .label("Scouted Map")
+            .url(url)
     }
 }
 
@@ -344,13 +416,22 @@ async fn add_train(
         scout_map: None,
         last_run: None,
     };
-    let m = channel.id.send_message(&ctx.http, |m|
-        m.content(train.message_content()).set_components(train.message_components())
-    ).await?;
+    let m = channel
+        .id
+        .send_message(&ctx.http, |m| {
+            m.content(train.message_content())
+                .set_components(train.message_components())
+        })
+        .await?;
     train.message_id = m.id;
-    train.write_to_db( tx).await?;
+    train.write_to_db(tx).await?;
 
-    Ok("Success!".to_owned())
+    Ok(format!(
+        "Success! A {} train on {} has been created in {}!",
+        expac,
+        world,
+        channel.name.as_deref().unwrap_or("<nameless channel>"),
+    ))
 }
 
 async fn remove_train(

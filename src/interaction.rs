@@ -1,3 +1,3 @@
 pub enum Response {
-    Ephmeral(String),
+    Ephemeral(String),
 }

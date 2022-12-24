@@ -1,9 +1,11 @@
 #![allow(unused)]
 
 mod interaction;
+mod model;
 mod train;
 
 use eyre::WrapErr;
+use sea_orm::{Database, DbConn};
 use serenity::async_trait;
 use serenity::model::application::interaction::{
     Interaction, InteractionResponseType, MessageFlags,
@@ -17,7 +19,7 @@ use std::env;
 use interaction::Response;
 
 struct Bot {
-    database: sqlx::SqlitePool,
+    db: DbConn,
     train_guild_id: GuildId,
 }
 
@@ -27,12 +29,12 @@ impl EventHandler for Bot {
         match interaction {
             Interaction::ApplicationCommand(command) => {
                 let result = match command.data.name.as_str() {
-                    "train" => train::handle_command(&self.database, &ctx, &command).await,
+                    "train" => train::handle_command(&self.db, &ctx, &command).await,
                     name => Err(eyre::eyre!("Unknown command name: {}", name)),
                 };
 
                 let content = match result {
-                    Ok(Response::Ephmeral(s)) => s,
+                    Ok(Response::Ephemeral(s)) => s,
                     Err(e) => {
                         format!("Error occurred processing command: {}", e)
                     }
@@ -65,7 +67,7 @@ impl EventHandler for Bot {
         );
         if guild.id == self.train_guild_id {
             eprintln!("Initializing train commands");
-            if let Err(e) = train::init(&self.database, &ctx, &guild).await {
+            if let Err(e) = train::init(&self.db, &ctx, &guild).await {
                 eprintln!("Error initializing train commands: {}", e);
             }
         } else {
@@ -91,29 +93,16 @@ async fn main() -> eyre::Result<()> {
         .map_err(eyre::Report::new)
         .and_then(|s| s.parse().map_err(eyre::Report::new))
         .expect("Expected a token in the environment variable TRAIN_GUILD_ID");
+    let db_url = env::var("DATABASE_URL")
+        .expect("Expected a database URL in the environment variable DATABASE_URL");
 
-    // Initiate a connection to the database file, creating the file if required.
-    let database = sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect_with(
-            sqlx::sqlite::SqliteConnectOptions::new()
-                .filename("database.sqlite")
-                .create_if_missing(true),
-        )
-        .await
-        .wrap_err("Couldn't connect to database")?;
-
-    // Run migrations, which updates the database's schema to the latest version.
-    sqlx::migrate!("./migrations")
-        .run(&database)
-        .await
-        .wrap_err("Couldn't run database migrations")?;
+    let db = Database::connect(&*db_url).await?;
 
     // Build our client.
     let mut client = Client::builder(token, GatewayIntents::GUILDS)
         .application_id(app_id)
         .event_handler(Bot {
-            database,
+            db,
             train_guild_id: GuildId(train_guild_id),
         })
         .await

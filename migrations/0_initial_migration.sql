@@ -1,12 +1,16 @@
 CREATE TABLE trains (
-    guild_id INT NOT NULL,
+    id INT NOT NULL PRIMARY KEY,
     world TEXT NOT NULL,
     expac INT NOT NULL,
-    channel_id INT NOT NULL,
-    message_id INT NOT NULL,
     status TEXT NOT NULL,
     last_run INT,
     scout_map TEXT,
-    PRIMARY KEY (guild_id, world, expac),
-    UNIQUE (channel_id, message_id)
-)
+    UNIQUE (world, expac)
+);
+
+CREATE TABLE monitors (
+    id INT NOT NULL PRIMARY KEY,
+    message_id INT NOT NULL,
+    channel_id INT NOT NULL,
+    train_id INT NOT NULL,
+);

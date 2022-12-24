@@ -1,5 +1,8 @@
 use chrono::{DateTime, Duration, Utc};
 use eyre::{bail, ensure, eyre, WrapErr};
+use sea_orm::entity::prelude::*;
+use sea_orm::ActiveValue::NotSet;
+use sea_orm::{ConnectionTrait, DeriveActiveEnum, EnumIter, Set};
 use serenity::async_trait;
 use serenity::builder::{
     CreateApplicationCommandOption, CreateButton, CreateComponents, CreateEmbed,
@@ -15,27 +18,29 @@ use sqlx::{query, query_as, SqliteExecutor};
 use std::collections::HashMap;
 use std::convert::AsRef;
 use strum::IntoEnumIterator;
-use strum_macros::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
+use strum_macros::{AsRefStr, Display, EnumString, IntoStaticStr};
 use url::Url;
 
-#[derive(Clone, Debug)]
-pub struct Train {
-    pub guild_id: GuildId,
+use super::{Expac, World};
+
+#[derive(Clone, Debug, DeriveEntityModel)]
+#[sea_orm(table_name = "trains")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub id: i64,
     pub world: World,
     pub expac: Expac,
-    pub channel_id: ChannelId,
-    pub message_id: MessageId,
     pub status: Status,
-    pub scout_map: Option<Url>,
+    pub scout_map: Option<String>,
     pub last_run: Option<DateTime<Utc>>,
 }
 
-impl Train {
+impl Model {
     pub fn begin(&mut self) {
         self.status = Status::Running;
     }
     pub fn scouted(&mut self, scout_map: Option<Url>) {
-        self.scout_map = scout_map;
+        self.scout_map = scout_map.map(|u| u.into());
         self.status = Status::Scouted;
     }
     pub fn done(&mut self) {
@@ -49,7 +54,7 @@ impl Train {
         self.last_run = None;
     }
     pub fn set_scout_map(&mut self, scout_map: Url) {
-        self.scout_map = Some(scout_map);
+        self.scout_map = Some(scout_map.into());
     }
     pub fn clear_scout_map(&mut self) {
         self.scout_map = None;
@@ -59,65 +64,6 @@ impl Train {
     }
     pub fn clear_last_run(&mut self) {
         self.last_run = None;
-    }
-
-    pub async fn from_db(
-        &self,
-        executor: impl sqlx::SqliteExecutor<'_>,
-        guild_id: GuildId,
-        world: World,
-        expac: Expac,
-    ) -> eyre::Result<Train> {
-        let guild_id_s = guild_id.0 as i64;
-        #[derive(sqlx::FromRow)]
-        struct Row {
-            channel_id: i64,
-            message_id: i64,
-            status: Status,
-            scout_map: Option<String>,
-            last_run: Option<DateTime<Utc>>,
-        }
-        let row = query_as::<_, Row>(
-            "SELECT channel_id, message_id, status, scout_map, last_run
-             FROM trains WHERE guild_id = ? AND world = ? AND expac = ?",
-        )
-        .bind(guild_id_s)
-        .bind(world)
-        .bind(expac)
-        .fetch_one(executor)
-        .await?;
-
-        Ok(Train {
-            guild_id: guild_id,
-            world: world,
-            expac: expac,
-            channel_id: ChannelId(row.channel_id as u64),
-            message_id: MessageId(row.message_id as u64),
-            status: row.status,
-            scout_map: row.scout_map.map(|s| s.parse()).transpose()?,
-            last_run: row.last_run,
-        })
-    }
-
-    pub async fn write_to_db(&self, executor: impl sqlx::SqliteExecutor<'_>) -> eyre::Result<()> {
-        let guild_id = self.guild_id.0 as i64;
-        let channel_id = self.channel_id.0 as i64;
-        let message_id = self.message_id.0 as i64;
-        let scout_map = self.scout_map.as_ref().map(|u| u.as_str());
-        query!("REPLACE INTO trains (guild_id, world, expac, channel_id, message_id, status, scout_map, last_run)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            guild_id,
-            self.world,
-            self.expac,
-            channel_id,
-            message_id,
-            self.status,
-            scout_map,
-            self.last_run,
-        )
-        .execute(executor)
-        .await?;
-        Ok(())
     }
 
     pub fn format_embed<'a>(&self, embed: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
@@ -162,7 +108,7 @@ impl Train {
         });
         if let Some(url) = &self.scout_map {
             components.create_action_row(|row| {
-                row.create_button(|button| Self::create_scout_link(&url, button))
+                row.create_button(|button| Self::create_scout_link(url, button))
             });
         }
         components
@@ -187,7 +133,7 @@ impl Train {
             .custom_id("done")
     }
 
-    fn create_scout_link<'b>(url: &Url, button: &'b mut CreateButton) -> &'b mut CreateButton {
+    fn create_scout_link<'b>(url: &String, button: &'b mut CreateButton) -> &'b mut CreateButton {
         button
             .style(ButtonStyle::Link)
             .label("Scouted Map")
@@ -195,37 +141,41 @@ impl Train {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Display, Debug, sqlx::Type)]
-pub enum Status {
-    Unknown,
-    Waiting,
-    Scouted,
-    Running,
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+pub async fn find_or_create(
+    tx: &impl ConnectionTrait,
+    world: World,
+    expac: Expac,
+) -> eyre::Result<Model> {
+    match Entity::find()
+        .filter(Column::World.eq(world).and(Column::Expac.eq(expac)))
+        .one(tx)
+        .await?
+    {
+        Some(existing) => Ok(existing),
+        None => {
+            let new = ActiveModel {
+                id: NotSet,
+                world: Set(world),
+                expac: Set(expac),
+                status: Set(Status::Unknown),
+                ..Default::default()
+            };
+            Ok(new.insert(tx).await?)
+        }
+    }
 }
 
-#[derive(
-    Copy, Clone, PartialEq, Eq, Hash, Display, Debug, sqlx::Type, EnumIter, EnumString, AsRefStr,
-)]
-pub enum World {
-    Halicarnassus,
-    Maduin,
-    Marilith,
-    Seraph,
-}
-
-#[derive(
-    Copy, Clone, PartialEq, Hash, Display, Debug, sqlx::Type, EnumIter, EnumString, AsRefStr,
-)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, DeriveActiveEnum, EnumIter)]
+#[sea_orm(rs_type = "i8", db_type = "Integer")]
 #[repr(i8)]
-pub enum Expac {
-    #[strum(to_string = "A Realm Reborn")]
-    ARR = 2,
-    #[strum(to_string = "Heavensward")]
-    HW = 3,
-    #[strum(to_string = "Stormblood")]
-    StB = 5,
-    #[strum(to_string = "Shadowbringers")]
-    ShB = 6,
-    #[strum(to_string = "Endwalker")]
-    EW = 7,
+pub enum Status {
+    Unknown = 0,
+    Waiting = 1,
+    Scouted = 2,
+    Running = 3,
 }

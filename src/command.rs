@@ -17,5 +17,5 @@ pub async fn hello(ctx: Context<'_>) -> eyre::Result<()> {
 }
 
 pub fn all() -> Vec<poise::Command<Data, eyre::Report>> {
-    vec![train::train(), train::create(), hello()]
+    vec![train::train(), hello()]
 }

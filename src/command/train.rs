@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use eyre::{bail, eyre};
 use poise::{
     command,
@@ -128,7 +128,7 @@ pub async fn scout(
     let reply = ctx
         .say(format!(
             "{} {} Train marked as scouted. Updating monitors...",
-            expac, world
+            world, expac,
         ))
         .await?;
 
@@ -137,7 +137,7 @@ pub async fn scout(
         .edit(ctx, |m| {
             m.content(format!(
                 "Success! {} {} Train marked as scouted!",
-                world, expac
+                world, expac,
             ))
         })
         .await?;
@@ -171,7 +171,7 @@ pub async fn start(
     let reply = ctx
         .say(format!(
             "{} {} Train marked as running. Updating monitors...",
-            expac, world
+            world, expac,
         ))
         .await?;
 
@@ -180,7 +180,7 @@ pub async fn start(
         .edit(ctx, |m| {
             m.content(format!(
                 "Success! {} {} Train marked as running!",
-                expac, world
+                world, expac,
             ))
         })
         .await?;
@@ -196,15 +196,23 @@ pub async fn done(
     #[description = "Expansion"] expac: Expac,
     #[description = "Discord timestamp when it was finished, defaults to now"]
     completion_time: Option<super::argument::Timestamp>,
+    #[description = "Discord timestamp when it will be forced, mutually exclusive with `completion_time`"]
+    force_time: Option<super::argument::Timestamp>,
 ) -> eyre::Result<()> {
     let db = &ctx.data().db;
 
     let train = self::train::find_or_create(db, world, expac).await?;
-    let completion_time = completion_time.unwrap_or_else(|| super::argument::Timestamp(Utc::now()));
+    let last_run_time = match (completion_time, force_time) {
+        (Some(_), Some(_)) => bail!("Cannot provide both completion_time and force_time"),
+        (Some(completed), _) => completed.0,
+        (_, Some(force)) => force.0 - Duration::hours(6),
+        _ => Utc::now(),
+    };
+
     let mut active = self::train::ActiveModel {
         status: Set(Status::Waiting),
         scout_map: Set(None),
-        last_run: Set(Some(completion_time.0)),
+        last_run: Set(Some(last_run_time)),
         ..self::train::ActiveModel::from(train.clone())
     };
     let train = active.update(db).await?;
@@ -212,7 +220,7 @@ pub async fn done(
     let reply = ctx
         .say(format!(
             "{} {} Train marked as complete at {}. Updating monitors...",
-            expac, world, completion_time
+            world, expac, last_run_time,
         ))
         .await?;
 
@@ -221,7 +229,7 @@ pub async fn done(
         .edit(ctx, |m| {
             m.content(format!(
                 "Success! {} {} Train marked as complete at {}!",
-                expac, world, completion_time,
+                world, expac, last_run_time,
             ))
         })
         .await?;

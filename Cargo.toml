@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.22"
+env_logger = "0.9.3"
 eyre = "0.6.8"
 poise = "0.4.1"
 sea-orm = { version = "0.10.2", features = ["macros", "sqlx-sqlite", "runtime-tokio-rustls"] }
@@ -16,3 +17,7 @@ strum = "0.24.1"
 strum_macros = "0.24.3"
 tokio = "1.21.2"
 url = "2.3.1"
+
+[profile.release-debug]
+inherits = "release"
+debug = true

@@ -16,34 +16,10 @@ use serenity::model::id::GuildId;
 use serenity::prelude::*;
 use std::env;
 
-/*
-#[async_trait]
-impl EventHandler for Bot {
-    async fn guild_create(&self, ctx: Context, guild: Guild, is_new: bool) {
-        println!(
-            "Joined {} guild {} ({})",
-            if is_new { "new" } else { "old" },
-            guild.id,
-            guild.name
-        );
-        if guild.id == self.train_guild_id {
-            eprintln!("Initializing train commands");
-            if let Err(e) = train::init(&self.db, &ctx, &guild).await {
-                eprintln!("Error initializing train commands: {}", e);
-            }
-        } else {
-            eprintln!("Not the train guild; skipping train commands")
-        }
-    }
-
-    async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
-    }
-}
-*/
-
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    env_logger::init();
+
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN")
         .wrap_err("Expected a token in the environment variable DISCORD_TOKEN")?;

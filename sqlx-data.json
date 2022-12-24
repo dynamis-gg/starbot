@@ -10,6 +10,16 @@
     },
     "query": "DELETE FROM trains WHERE guild_id = ? AND world = ? AND expac = ?"
   },
+  "dde52c072ea6d98a51f66ad1540f64b9e4c3162d83c725b2e72782ef61aa3ba6": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 8
+      }
+    },
+    "query": "REPLACE INTO trains (guild_id, world, expac, channel_id, message_id, status, scout_map, last_run)\n                VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  },
   "f509b93b426acdb11e81ee35404671f8fd2afa97f1de7b63358a99b95806f246": {
     "describe": {
       "columns": [

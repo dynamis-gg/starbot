@@ -1,0 +1,31 @@
+{
+  "db": "SQLite",
+  "59e15d0d0b971c1190dbed73348dc0497de5422c6b0c24717dbd43d537fab001": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Right": 3
+      }
+    },
+    "query": "DELETE FROM trains WHERE guild_id = ? AND world = ? AND expac = ?"
+  },
+  "f509b93b426acdb11e81ee35404671f8fd2afa97f1de7b63358a99b95806f246": {
+    "describe": {
+      "columns": [
+        {
+          "name": "count",
+          "ordinal": 0,
+          "type_info": "Int"
+        }
+      ],
+      "nullable": [
+        false
+      ],
+      "parameters": {
+        "Right": 3
+      }
+    },
+    "query": "SELECT COUNT(*) as count FROM trains WHERE guild_id = ? AND world = ? AND expac = ?"
+  }
+}

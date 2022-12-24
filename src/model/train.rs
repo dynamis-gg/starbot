@@ -69,14 +69,10 @@ impl Model {
     pub fn format_embed<'a>(&self, embed: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
         let mut content = format!("Status: {}", self.status);
         if let Some(end_time) = self.last_run {
-            content += &*format!("\nLast run completed at: <t:{}:F>", end_time.timestamp());
+            content += &*format!("\nLast run completed at: <t:{}:f>", end_time.timestamp());
             if self.status == Status::Waiting {
                 let force_time = end_time + (Duration::hours(6));
-                if force_time < Utc::now() {
-                    content += &*format!("\nForce at: <t:{}:F>", force_time.timestamp());
-                } else {
-                    content += &*format!("\n**Forced at:** <t:{}:F>", force_time.timestamp());
-                }
+                content += &*format!("\nForced <t:{}:R>", force_time.timestamp());
             }
         }
         embed
@@ -84,8 +80,11 @@ impl Model {
             .description(content)
     }
 
-    pub fn format_components(&self) -> CreateComponents {
-        let mut components = CreateComponents::default();
+    pub fn format_components<'a>(
+        &self,
+        components: &'a mut CreateComponents,
+    ) -> &'a mut CreateComponents {
+        /*
         components.create_action_row(|row| {
             match self.status {
                 Status::Waiting => {
@@ -106,6 +105,7 @@ impl Model {
             };
             row
         });
+        */
         if let Some(url) = &self.scout_map {
             components.create_action_row(|row| {
                 row.create_button(|button| Self::create_scout_link(url, button))

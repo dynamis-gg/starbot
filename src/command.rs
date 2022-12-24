@@ -1,3 +1,4 @@
+pub mod argument;
 pub mod train;
 
 use poise::serenity_prelude as serenity;

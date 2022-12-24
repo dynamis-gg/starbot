@@ -15,6 +15,7 @@ pub enum World {
     Maduin,
     Marilith,
     Seraph,
+    Testing,
 }
 
 #[poise::async_trait]
@@ -119,16 +120,16 @@ impl sea_query::ValueType for World {
 #[repr(i8)]
 #[strum(ascii_case_insensitive)]
 pub enum Expac {
-    #[strum(to_string = "A Realm Reborn", serialize = "ARR")]
-    ARR = 2,
-    #[strum(to_string = "Heavensward", serialize = "HW")]
-    HW = 3,
-    #[strum(to_string = "Stormblood", serialize = "SB", serialize = "StB")]
-    StB = 4,
-    #[strum(to_string = "Shadowbringers", serialize = "ShB")]
-    ShB = 5,
     #[strum(to_string = "Endwalker", serialize = "EW")]
     EW = 6,
+    #[strum(to_string = "Shadowbringers", serialize = "ShB")]
+    ShB = 5,
+    #[strum(to_string = "Stormblood", serialize = "SB", serialize = "StB")]
+    StB = 4,
+    #[strum(to_string = "Heavensward", serialize = "HW")]
+    HW = 3,
+    #[strum(to_string = "A Realm Reborn", serialize = "ARR")]
+    ARR = 2,
 }
 
 #[derive(Debug, Iden)]

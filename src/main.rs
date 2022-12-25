@@ -1,17 +1,9 @@
-#![allow(unused)]
-
 mod command;
-mod model;
 
 use eyre::WrapErr;
+use sea_orm_migration::MigratorTrait;
 use poise::serenity_prelude::UserId;
-use sea_orm::{Database, DbConn};
-use serenity::async_trait;
-use serenity::model::application::interaction::{
-    Interaction, InteractionResponseType, MessageFlags,
-};
-use serenity::model::gateway::Ready;
-use serenity::model::guild::Guild;
+use sea_orm::Database;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
 use std::env;
@@ -23,10 +15,6 @@ async fn main() -> eyre::Result<()> {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN")
         .wrap_err("Expected a token in the environment variable DISCORD_TOKEN")?;
-    let app_id: u64 = env::var("DISCORD_APPLICATION_ID")
-        .map_err(eyre::Report::new)
-        .and_then(|s| s.parse().map_err(eyre::Report::new))
-        .wrap_err("Expected a token in the environment variable DISCORD_APPLICATION_ID")?;
     let train_guild_id = env::var("TRAIN_GUILD_ID")
         .map_err(eyre::Report::new)
         .and_then(|s| s.parse().map_err(eyre::Report::new))
@@ -41,6 +29,7 @@ async fn main() -> eyre::Result<()> {
         .map(UserId)?;
 
     let db = Database::connect(&*db_url).await?;
+    migration::Migrator::up(&db, None).await?;
 
     // Build our client.
     let data = command::Data { db, train_guild_id };

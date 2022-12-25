@@ -1,24 +1,12 @@
 use chrono::{DateTime, Duration, Utc};
-use eyre::{bail, ensure, eyre, WrapErr};
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::{self, DynIden, SeaRc};
-use sea_orm::{ConnectionTrait, DeriveActiveEnum, EnumIter, NotSet, Set, Unchanged};
-use serenity::async_trait;
+use sea_orm::sea_query::{self, SeaRc};
+use sea_orm::{ConnectionTrait, EnumIter, NotSet, Set};
 use serenity::builder::{
-    CreateApplicationCommandOption, CreateButton, CreateComponents, CreateEmbed,
+    CreateButton, CreateComponents, CreateEmbed,
 };
-use serenity::model::application::command::{CommandOptionType, CommandType};
-use serenity::model::application::interaction::application_command::{
-    ApplicationCommandInteraction, CommandDataOption, CommandDataOptionValue,
-};
-use serenity::model::prelude::component::{Button, ButtonStyle};
-use serenity::model::prelude::*;
-use serenity::prelude::*;
-use sqlx::{query, query_as, SqliteExecutor};
-use std::collections::HashMap;
-use std::convert::AsRef;
-use strum::IntoEnumIterator;
-use strum_macros::{AsRefStr, Display, EnumString, FromRepr, IntoStaticStr};
+use serenity::model::prelude::component::{ButtonStyle};
+use strum_macros::{Display, FromRepr};
 use url::Url;
 
 use super::{Expac, World};
@@ -114,18 +102,21 @@ impl Model {
         components
     }
 
+    #[allow(unused)]
     fn create_scout_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
         button
             .style(ButtonStyle::Primary)
             .label("Scout")
             .custom_id("scout")
     }
+    #[allow(unused)]
     fn create_run_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
         button
             .style(ButtonStyle::Primary)
             .label("Start")
             .custom_id("run")
     }
+    #[allow(unused)]
     fn create_done_button<'b>(button: &'b mut CreateButton) -> &'b mut CreateButton {
         button
             .style(ButtonStyle::Success)

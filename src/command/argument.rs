@@ -22,8 +22,8 @@ impl std::error::Error for ErrWrap {
 #[poise::async_trait]
 impl SlashArgument for Timestamp {
     async fn extract(
-        ctx: &serenity::Context,
-        interaction: poise::ApplicationCommandOrAutocompleteInteraction<'_>,
+        _ctx: &serenity::Context,
+        _interaction: poise::ApplicationCommandOrAutocompleteInteraction<'_>,
         value: &serenity::json::Value,
     ) -> Result<Self, poise::SlashArgError> {
         let str = value

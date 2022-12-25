@@ -1,13 +1,10 @@
 use chrono::{Duration, Utc};
 use eyre::{bail, eyre};
 use futures::{stream::FuturesUnordered, StreamExt};
-use poise::{
-    command,
-    serenity_prelude::{ChannelId, MessageId},
-};
+use poise::serenity_prelude::{ChannelId, MessageId};
 use sea_orm::{ActiveModelTrait, ModelTrait, NotSet, Set, TransactionTrait};
 
-use crate::model::{
+use entity::{
     monitor,
     train::{self, Status},
     Expac, World,
@@ -66,7 +63,7 @@ pub async fn create_monitor(
 async fn refresh_monitor(
     ctx: super::Context<'_>,
     train: &train::Model,
-    mut monitor: monitor::Model,
+    monitor: monitor::Model,
 ) -> eyre::Result<()> {
     let db = &ctx.data().db;
     let channel_id = ChannelId(monitor.channel_id as u64);
@@ -186,7 +183,7 @@ pub async fn start(
         last_run: Set(None),
         ..self::train::ActiveModel::from(train.clone())
     };
-    if let Some(ref url) = map_link {
+    if map_link.is_some() {
         active.scout_map = Set(map_link)
     }
     let train = active.update(db).await?;
@@ -219,7 +216,7 @@ pub async fn done(
         _ => Utc::now(),
     };
 
-    let mut active = self::train::ActiveModel {
+    let active = self::train::ActiveModel {
         status: Set(Status::Waiting),
         scout_map: Set(None),
         last_run: Set(Some(last_run_time)),

@@ -4,9 +4,15 @@ pub mod train;
 use poise::serenity_prelude as serenity;
 use poise::SlashArgument;
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::{self, DynIden, SeaRc};
+use sea_orm::sea_query::{self, SeaRc};
 use sea_orm::{EnumIter, Iterable};
-use strum_macros::{AsRefStr, Display, EnumString, FromRepr, IntoStaticStr};
+use strum_macros::{AsRefStr, Display, EnumString, FromRepr};
+
+#[derive(Copy, Clone, Debug, EnumIter, Iden)]
+pub enum Table {
+    Trains,
+    Monitors,
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr)]
 #[strum(ascii_case_insensitive)]
@@ -21,8 +27,8 @@ pub enum World {
 #[poise::async_trait]
 impl SlashArgument for World {
     async fn extract(
-        ctx: &serenity::Context,
-        interaction: poise::ApplicationCommandOrAutocompleteInteraction<'_>,
+        _ctx: &serenity::Context,
+        _interaction: poise::ApplicationCommandOrAutocompleteInteraction<'_>,
         value: &poise::serenity_prelude::json::Value,
     ) -> Result<Self, poise::SlashArgError> {
         let choice = value
@@ -138,8 +144,8 @@ pub struct ExpacEnum;
 #[poise::async_trait]
 impl SlashArgument for Expac {
     async fn extract(
-        ctx: &serenity::Context,
-        interaction: poise::ApplicationCommandOrAutocompleteInteraction<'_>,
+        _ctx: &serenity::Context,
+        _interaction: poise::ApplicationCommandOrAutocompleteInteraction<'_>,
         value: &poise::serenity_prelude::json::Value,
     ) -> Result<Self, poise::SlashArgError> {
         let choice = value

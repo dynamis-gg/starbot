@@ -1,5 +1,6 @@
 use chrono::{Duration, Utc};
 use eyre::{bail, eyre};
+use futures::{stream::FuturesUnordered, StreamExt};
 use poise::{
     command,
     serenity_prelude::{ChannelId, MessageId},
@@ -22,7 +23,7 @@ pub async fn train(_ctx: super::Context<'_>) -> eyre::Result<()> {
 ///
 /// Creates a new message in the current channel to monitor a train's status.
 /// All monitors for the same train (world + expac) share underlying data.
-#[poise::command(slash_command, ephemeral)]
+#[poise::command(slash_command)]
 pub async fn create_monitor(
     ctx: super::Context<'_>,
     #[description = "World server"] world: World,
@@ -37,11 +38,10 @@ pub async fn create_monitor(
     // Send an "initializing" message first so that we can get its ID
     // and commit it before we make it look like the command succeeded.
     let mut msg = ctx
-        .channel_id()
-        .send_message(ctx.discord(), |m| {
+        .send(|m| {
             m.content(format!("Initializing {} {} Train...", world, expac))
         })
-        .await?;
+        .await?.into_message().await?;
     let monitor = monitor::ActiveModel {
         id: NotSet,
         train_id: Set(train.id),
@@ -60,53 +60,83 @@ pub async fn create_monitor(
     })
     .await?;
 
-    ctx.send(|m| {
-        m.content(format!(
-            "Success! A monitor for the {} train on {} has been created!",
-            expac, world,
-        ))
-    })
-    .await?;
-
     Ok(())
 }
 
-#[must_use]
-async fn refresh_monitors(ctx: super::Context<'_>, train: &train::Model) -> eyre::Result<()> {
+async fn refresh_monitor(
+    ctx: super::Context<'_>,
+    train: &train::Model,
+    mut monitor: monitor::Model,
+) -> eyre::Result<()> {
     let db = &ctx.data().db;
-    for monitor in train.find_related(self::monitor::Entity).all(db).await? {
-        let channel_id = ChannelId(monitor.channel_id as u64);
-        let message_id = MessageId(monitor.message_id as u64);
-        let msg = channel_id.message(ctx.discord(), message_id).await;
-        if let Err(serenity::Error::Http(ref http)) = msg {
-            if let serenity::http::error::Error::UnsuccessfulRequest(
-                serenity::http::error::ErrorResponse {
-                    status_code:
-                        poise::serenity_prelude::StatusCode::FORBIDDEN
-                        | poise::serenity_prelude::StatusCode::NOT_FOUND,
-                    ..
-                },
-            ) = **http
-            {
-                // The message must have been deleted or we no longer have permission to find it.
-                // Remove from our DB, logging but not failing on error.
-                if let Err(e) = monitor.delete(db).await {
-                    eprintln!("Warning: Unable to delete stale message from our DB: {}", e);
-                }
-                continue;
+    let channel_id = ChannelId(monitor.channel_id as u64);
+    let message_id = MessageId(monitor.message_id as u64);
+    let msg = channel_id.message(ctx.discord(), message_id).await;
+    if let Err(serenity::Error::Http(ref http)) = msg {
+        if let serenity::http::error::Error::UnsuccessfulRequest(
+            serenity::http::error::ErrorResponse {
+                status_code:
+                    poise::serenity_prelude::StatusCode::FORBIDDEN
+                    | poise::serenity_prelude::StatusCode::NOT_FOUND,
+                ..
+            },
+        ) = **http
+        {
+            // The message must have been deleted or we no longer have permission to find it.
+            // Remove from our DB, logging but not failing on error.
+            if let Err(e) = monitor.delete(db).await {
+                eprintln!("Warning: Unable to delete stale message from our DB: {}", e);
             }
+            return Ok(());
         }
-        msg?.edit(ctx.discord(), |m| {
-            m.embed(|e| train.format_embed(e))
-                .components(|c| train.format_components(c))
-        })
-        .await?;
     }
+    msg?.edit(ctx.discord(), |m| {
+        m.embed(|e| train.format_embed(e))
+            .components(|c| train.format_components(c))
+    })
+    .await?;
     Ok(())
+}
+
+// Prints errors to stderr and reports only success/failure.
+async fn refresh_monitors(ctx: super::Context<'_>, train: &train::Model) -> bool {
+    let db = &ctx.data().db;
+    let monitors = match train.find_related(self::monitor::Entity).all(db).await {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("Warning: Unable to retrieve monitors from DB: {}", e);
+            return false;
+        }
+    };
+
+    let tasks: FuturesUnordered<_> = monitors
+        .into_iter()
+        .map(|monitor| refresh_monitor(ctx, train, monitor))
+        .collect();
+    tasks
+        .all(|r| async move {
+            match r {
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("Warning: Unable to update monitor: {}", e);
+                    false
+                }
+            }
+        })
+        .await
+}
+
+fn monitor_msg(base: String, success: bool) -> String {
+    if success {
+        format!("{}.", base)
+    } else {
+        format!(
+                "Error: {}, but not all monitor posts could be updated.", base)
+    }
 }
 
 /// Mark a train as scouted
-#[poise::command(slash_command, ephemeral)]
+#[poise::command(slash_command)]
 pub async fn scout(
     ctx: super::Context<'_>,
     #[description = "World server"] world: World,
@@ -125,27 +155,20 @@ pub async fn scout(
         ..self::train::ActiveModel::from(train.clone())
     };
     let train = active.update(db).await?;
-    let reply = ctx
-        .say(format!(
-            "{} {} Train marked as scouted. Updating monitors...",
-            world, expac,
-        ))
-        .await?;
 
-    refresh_monitors(ctx, &train).await?;
-    reply
-        .edit(ctx, |m| {
-            m.content(format!(
-                "Success! {} {} Train marked as scouted!",
-                world, expac,
-            ))
-        })
-        .await?;
+    ctx.defer().await?;
+    let success = refresh_monitors(ctx, &train).await;
+    let scout_text = match train.scout_map {
+        Some(url) => format!("[scouted]({})", url),
+        None => "scouted".to_owned(),
+    };
+    ctx.say(monitor_msg(format!("{} {} Train has been {}", world, expac, scout_text), success)).await?;
+
     Ok(())
 }
 
 /// Mark a train as being run.
-#[poise::command(slash_command, ephemeral)]
+#[poise::command(slash_command)]
 pub async fn start(
     ctx: super::Context<'_>,
     #[description = "World server"] world: World,
@@ -168,28 +191,15 @@ pub async fn start(
     }
     let train = active.update(db).await?;
 
-    let reply = ctx
-        .say(format!(
-            "{} {} Train marked as running. Updating monitors...",
-            world, expac,
-        ))
-        .await?;
-
-    refresh_monitors(ctx, &train).await?;
-    reply
-        .edit(ctx, |m| {
-            m.content(format!(
-                "Success! {} {} Train marked as running!",
-                world, expac,
-            ))
-        })
-        .await?;
+    ctx.defer().await?;
+    let success = refresh_monitors(ctx, &train).await;
+    ctx.say(monitor_msg(format!("{} {} Train is now running", world, expac), success)).await?;
 
     Ok(())
 }
 
 /// Mark a train as being complete.
-#[poise::command(slash_command, ephemeral)]
+#[poise::command(slash_command)]
 pub async fn done(
     ctx: super::Context<'_>,
     #[description = "World server"] world: World,
@@ -217,22 +227,9 @@ pub async fn done(
     };
     let train = active.update(db).await?;
 
-    let reply = ctx
-        .say(format!(
-            "{} {} Train marked as complete at {}. Updating monitors...",
-            world, expac, last_run_time,
-        ))
-        .await?;
-
-    refresh_monitors(ctx, &train).await?;
-    reply
-        .edit(ctx, |m| {
-            m.content(format!(
-                "Success! {} {} Train marked as complete at {}!",
-                world, expac, last_run_time,
-            ))
-        })
-        .await?;
+    ctx.defer().await?;
+    let success = refresh_monitors(ctx, &train).await;
+    ctx.say(monitor_msg(format!("{} {} Train completed at <t:{}:f>", world, expac, last_run_time.timestamp_micros()), success)).await?;
 
     Ok(())
 }

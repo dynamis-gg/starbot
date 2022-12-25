@@ -67,7 +67,7 @@ impl Model {
     }
 
     pub fn format_embed<'a>(&self, embed: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
-        let mut content = format!("Status: {}", self.status);
+        let mut content = format!("{} {}", self.status.emoji(), self.status);
         if let Some(end_time) = self.last_run {
             content += &*format!("\nLast run completed at: <t:{}:f>", end_time.timestamp());
             if self.status == Status::Waiting {
@@ -186,6 +186,18 @@ pub enum Status {
     Waiting = 1,
     Scouted = 2,
     Running = 3,
+}
+
+impl Status {
+    pub fn emoji(&self) -> &'static str {
+        use Status::*;
+        match self {
+            Unknown => "❓",
+            Waiting => "🕑",
+            Scouted => "☑️",
+            Running => "➡️",
+        }
+    }
 }
 
 #[derive(Debug, Iden)]

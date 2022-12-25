@@ -9,6 +9,7 @@ edition = "2021"
 chrono = "0.4.22"
 env_logger = "0.9.3"
 eyre = "0.6.8"
+futures = "0.3.25"
 poise = "0.4.1"
 sea-orm = { version = "0.10.2", features = ["macros", "sqlx-sqlite", "runtime-tokio-rustls"] }
 serenity = { version = "0.11.5", default-features = false, features = ["cache", "builder", "gateway", "client", "model", "rustls_backend"] }

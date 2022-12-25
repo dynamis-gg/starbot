@@ -1767,6 +1767,7 @@ dependencies = [
  "chrono",
  "env_logger",
  "eyre",
+ "futures",
  "poise",
  "sea-orm",
  "serenity",

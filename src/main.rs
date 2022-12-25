@@ -1,4 +1,5 @@
-mod command;
+pub mod command;
+pub mod train;
 
 use clap::Parser;
 use poise::serenity_prelude::UserId;

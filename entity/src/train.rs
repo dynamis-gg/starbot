@@ -6,7 +6,6 @@ use serenity::builder::{CreateButton, CreateComponents, CreateEmbed};
 use serenity::model::prelude::component::ButtonStyle;
 use std::fmt::Write;
 use strum_macros::{Display, FromRepr};
-use url::Url;
 
 use super::{Expac, World};
 
@@ -23,33 +22,23 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn begin(&mut self) {
-        self.status = Status::Running;
-    }
-    pub fn scouted(&mut self, scout_map: Option<Url>) {
-        self.scout_map = scout_map.map(|u| u.into());
+    /// Clears an existing scout map if None is provided.
+    pub fn scout(&mut self, scout_map: Option<String>) {
         self.status = Status::Scouted;
+        self.scout_map = scout_map.map(|u| u.into());
     }
-    pub fn done(&mut self) {
-        self.scout_map = None;
+    pub fn start(&mut self) {
+        self.status = Status::Running;
+        self.last_run = None;
+    }
+    pub fn done(&mut self, last_run: DateTime<Utc>) {
         self.status = Status::Waiting;
-        self.last_run = Some(Utc::now());
+        self.scout_map = None;
+        self.last_run = Some(last_run);
     }
     pub fn reset(&mut self) {
         self.status = Status::Unknown;
         self.scout_map = None;
-        self.last_run = None;
-    }
-    pub fn set_scout_map(&mut self, scout_map: Url) {
-        self.scout_map = Some(scout_map.into());
-    }
-    pub fn clear_scout_map(&mut self) {
-        self.scout_map = None;
-    }
-    pub fn set_last_run(&mut self, time: DateTime<Utc>) {
-        self.last_run = Some(time)
-    }
-    pub fn clear_last_run(&mut self) {
         self.last_run = None;
     }
 

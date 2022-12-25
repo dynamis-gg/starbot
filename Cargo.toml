@@ -11,6 +11,7 @@ members = [
 
 [workspace.dependencies]
 chrono = "0.4.22"
+clap = { version = "4.0.0", features = ["derive", "env"] }
 env_logger = "0.9.3"
 eyre = "0.6.8"
 futures = "0.3.25"
@@ -42,6 +43,7 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 tokio = { workspace = true }
 url = { workspace = true }
+clap = { workspace = true }
 
 [profile.release-debug]
 inherits = "release"

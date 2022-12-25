@@ -1,42 +1,43 @@
 mod command;
 
-use eyre::WrapErr;
+use clap::Parser;
 use poise::serenity_prelude::UserId;
 use sea_orm::Database;
 use sea_orm_migration::MigratorTrait;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
-use std::env;
+
+#[derive(Parser, Debug)]
+#[command()]
+struct Args {
+    #[arg(long, env = "STARBOT_DISCORD_TOKEN", required = true)]
+    token: String,
+    #[arg(long, env = "STARBOT_TRAIN_GUILD_ID", required = true)]
+    train_guild_id: u64,
+    #[arg(long, env = "DATABASE_URL", required = true)]
+    db_url: url::Url,
+    #[arg(long, env = "STARBOT_OWNER_ID", required = true)]
+    owner_id: u64,
+}
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     env_logger::init();
 
-    // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN")
-        .wrap_err("Expected a token in the environment variable DISCORD_TOKEN")?;
-    let train_guild_id = env::var("TRAIN_GUILD_ID")
-        .map_err(eyre::Report::new)
-        .and_then(|s| s.parse().map_err(eyre::Report::new))
-        .wrap_err("Expected a token in the environment variable TRAIN_GUILD_ID")
-        .map(GuildId)?;
-    let db_url = env::var("DATABASE_URL")
-        .wrap_err("Expected a database URL in the environment variable DATABASE_URL")?;
-    let owner_id = env::var("OWNER_ID")
-        .map_err(eyre::Report::new)
-        .and_then(|s| s.parse().map_err(eyre::Report::new))
-        .wrap_err("Expected an owner ID in the environment variable OWNER_ID")
-        .map(UserId)?;
+    let args = Args::parse();
 
-    let db = Database::connect(&*db_url).await?;
+    let db = Database::connect(args.db_url.as_ref()).await?;
     migration::Migrator::up(&db, None).await?;
 
     // Build our client.
-    let data = command::Data { db, train_guild_id };
+    let data = command::Data {
+        db,
+        train_guild_id: GuildId(args.train_guild_id),
+    };
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: command::all(),
-            owners: std::collections::HashSet::from([owner_id]),
+            owners: std::collections::HashSet::from([UserId(args.owner_id)]),
             prefix_options: poise::PrefixFrameworkOptions {
                 prefix: Some("!".to_owned()),
                 mention_as_prefix: true,
@@ -45,12 +46,12 @@ async fn main() -> eyre::Result<()> {
             },
             ..Default::default()
         })
-        .token(token)
+        .token(args.token)
         .intents(GatewayIntents::DIRECT_MESSAGES)
         .user_data_setup(move |ctx, _r, framework| {
             Box::pin(async move {
                 eprintln!("Initializing...");
-                let channel = owner_id.create_dm_channel(ctx).await?;
+                let channel = UserId(args.owner_id).create_dm_channel(ctx).await?;
                 channel
                     .send_message(ctx, |m| m.content("Greetings, owner! I wish only to hear your words, share your feelings, know your thoughts."))
                     .await?;

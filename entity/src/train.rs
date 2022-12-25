@@ -6,6 +6,7 @@ use serenity::builder::{
     CreateButton, CreateComponents, CreateEmbed,
 };
 use serenity::model::prelude::component::{ButtonStyle};
+use std::fmt::Write;
 use strum_macros::{Display, FromRepr};
 use url::Url;
 
@@ -57,10 +58,10 @@ impl Model {
     pub fn format_embed<'a>(&self, embed: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
         let mut content = format!("{} {}", self.status.emoji(), self.status);
         if let Some(end_time) = self.last_run {
-            content += &*format!("\nLast run completed at: <t:{}:f>", end_time.timestamp());
+            write!(content, "\nLast run completed at: <t:{}:f>", end_time.timestamp()).unwrap();
             if self.status == Status::Waiting {
                 let force_time = end_time + (Duration::hours(6));
-                content += &*format!("\nForced <t:{}:R>", force_time.timestamp());
+                write!(content, "\nForced <t:{}:R>", force_time.timestamp()).unwrap();
             }
         }
         embed

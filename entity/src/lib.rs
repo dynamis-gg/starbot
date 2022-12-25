@@ -1,3 +1,4 @@
+pub mod dashboard;
 pub mod monitor;
 pub mod train;
 
@@ -12,9 +13,10 @@ use strum_macros::{AsRefStr, Display, EnumString, FromRepr};
 pub enum Table {
     Trains,
     Monitors,
+    Dashboards,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr)]
+#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr)]
 #[strum(ascii_case_insensitive)]
 pub enum World {
     Halicarnassus,
@@ -121,7 +123,7 @@ impl sea_query::ValueType for World {
     }
 }
 #[derive(
-    Copy, Clone, PartialEq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr, FromRepr,
+    Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr, FromRepr,
 )]
 #[repr(i8)]
 #[strum(ascii_case_insensitive)]

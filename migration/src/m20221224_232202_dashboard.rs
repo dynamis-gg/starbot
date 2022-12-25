@@ -12,11 +12,7 @@ impl MigrationTrait for Migration {
             .create_table(
                 Table::create()
                     .table(entity::Table::Dashboards)
-                    .col(
-                        ColumnDef::new(Dashboards::Id)
-                            .integer()
-                            .primary_key(),
-                    )
+                    .col(ColumnDef::new(Dashboards::Id).integer().primary_key())
                     .col(ColumnDef::new(Dashboards::MessageId).integer().not_null())
                     .col(ColumnDef::new(Dashboards::ChannelId).integer().not_null())
                     .to_owned(),

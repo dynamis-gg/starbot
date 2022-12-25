@@ -2,10 +2,8 @@ use chrono::{DateTime, Duration, Utc};
 use sea_orm::entity::prelude::*;
 use sea_orm::sea_query::{self, SeaRc};
 use sea_orm::{ConnectionTrait, EnumIter, NotSet, Set};
-use serenity::builder::{
-    CreateButton, CreateComponents, CreateEmbed,
-};
-use serenity::model::prelude::component::{ButtonStyle};
+use serenity::builder::{CreateButton, CreateComponents, CreateEmbed};
+use serenity::model::prelude::component::ButtonStyle;
 use std::fmt::Write;
 use strum_macros::{Display, FromRepr};
 use url::Url;
@@ -58,7 +56,12 @@ impl Model {
     pub fn format_embed<'a>(&self, embed: &'a mut CreateEmbed) -> &'a mut CreateEmbed {
         let mut content = format!("{} {}", self.status.emoji(), self.status);
         if let Some(end_time) = self.last_run {
-            write!(content, "\nLast run completed at: <t:{}:f>", end_time.timestamp()).unwrap();
+            write!(
+                content,
+                "\nLast run completed at: <t:{}:f>",
+                end_time.timestamp()
+            )
+            .unwrap();
             if self.status == Status::Waiting {
                 let force_time = end_time + (Duration::hours(6));
                 write!(content, "\nForced <t:{}:R>", force_time.timestamp()).unwrap();

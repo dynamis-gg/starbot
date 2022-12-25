@@ -2,20 +2,25 @@ use chrono::{Duration, Utc};
 use eyre::{bail, eyre};
 use futures::{stream::FuturesUnordered, StreamExt};
 use poise::serenity_prelude::{ChannelId, MessageId};
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, NotSet, QueryFilter, Set,
+    TransactionTrait,
+};
+use std::collections::{BTreeSet, HashMap};
 use std::convert::AsRef;
 use std::fmt::Write;
-use std::collections::{BTreeSet, HashMap};
 
 use entity::{
-    dashboard,
-    monitor,
+    dashboard, monitor,
     train::{self, Status},
     Expac, World,
 };
 
 /// Hunt train commands.
-#[poise::command(slash_command, subcommands("scout", "start", "done", "create_monitor", "create_dashboard"))]
+#[poise::command(
+    slash_command,
+    subcommands("scout", "start", "done", "create_monitor", "create_dashboard")
+)]
 pub async fn train(_ctx: super::Context<'_>) -> eyre::Result<()> {
     Err(eyre!("unsupported"))
 }
@@ -31,7 +36,10 @@ pub async fn create_dashboard(ctx: super::Context<'_>) -> eyre::Result<()> {
     // Send an "initializing" message first so that we can get its ID
     // and commit it before we make it look like the command succeeded.
     let msg = ctx
-        .say("Initializing dashboard...").await?.into_message().await?;
+        .say("Initializing dashboard...")
+        .await?
+        .into_message()
+        .await?;
 
     let dashboard = dashboard::ActiveModel {
         id: NotSet,
@@ -40,7 +48,10 @@ pub async fn create_dashboard(ctx: super::Context<'_>) -> eyre::Result<()> {
         ..Default::default()
     };
     let dashboard = dashboard.insert(&tx).await?;
-    let trains = train::Entity::find().filter(train::Column::World.ne(World::Testing)).all(&tx).await?;
+    let trains = train::Entity::find()
+        .filter(train::Column::World.ne(World::Testing))
+        .all(&tx)
+        .await?;
 
     // Commit before updating the message.
     tx.commit().await?;
@@ -67,8 +78,13 @@ pub async fn create_monitor(
     // Send an "initializing" message first so that we can get its ID
     // and commit it before we make it look like the command succeeded.
     let mut msg = ctx
-        .say(format!("Initializing monitor for {} {} Train...", world, expac))
-        .await?.into_message().await?;
+        .say(format!(
+            "Initializing monitor for {} {} Train...",
+            world, expac
+        ))
+        .await?
+        .into_message()
+        .await?;
     let monitor = monitor::ActiveModel {
         id: NotSet,
         train_id: Set(train.id),
@@ -128,29 +144,64 @@ async fn refresh_dashboard(
     }
 
     msg?.edit(ctx.discord(), |m| {
-        m.content("")
-         .embed(|e| e.title("Train Dashboard")
+        m.content("").embed(|e| {
+            e.title("Train Dashboard")
                 .timestamp(Utc::now())
-                .field("Expansion", format!("__{}__", expacs.iter().rev().map(Expac::as_ref).collect::<Vec<_>>().join("__\n__")), true)
+                .field(
+                    "Expansion",
+                    format!(
+                        "__{}__",
+                        expacs
+                            .iter()
+                            .rev()
+                            .map(Expac::as_ref)
+                            .collect::<Vec<_>>()
+                            .join("__\n__")
+                    ),
+                    true,
+                )
                 .fields(worlds.into_iter().map(|world| {
                     let mut col = String::new();
                     for &expac in expacs.iter().rev() {
                         let train = train_map.get(&(expac, world));
                         let status = train.map_or(Status::Unknown, |t| t.status);
-                        writeln!(col, "{} {}", status.emoji(), match status {
-                            Status::Unknown => "Unknown".to_owned(),
-                            Status::Scouted => if let Some(train::Model { scout_map: Some(url), .. }) = train {
-                                format!("[Scouted]({})", url)
-                            } else {
-                                "Scouted".to_owned()
-                            },
-                            Status::Waiting => if let Some(train::Model { last_run: Some(last_run), .. }) = train {
-                                format!("<t:{}:R>", (*last_run + Duration::hours(6)).timestamp()) } else { "Waiting".to_owned() },
+                        writeln!(
+                            col,
+                            "{} {}",
+                            status.emoji(),
+                            match status {
+                                Status::Unknown => "Unknown".to_owned(),
+                                Status::Scouted =>
+                                    if let Some(train::Model {
+                                        scout_map: Some(url),
+                                        ..
+                                    }) = train
+                                    {
+                                        format!("[Scouted]({})", url)
+                                    } else {
+                                        "Scouted".to_owned()
+                                    },
+                                Status::Waiting =>
+                                    if let Some(train::Model {
+                                        last_run: Some(last_run),
+                                        ..
+                                    }) = train
+                                    {
+                                        format!(
+                                            "<t:{}:R>",
+                                            (*last_run + Duration::hours(6)).timestamp()
+                                        )
+                                    } else {
+                                        "Waiting".to_owned()
+                                    },
                                 Status::Running => "Running".to_owned(),
-                        }).unwrap();
+                            }
+                        )
+                        .unwrap();
                     }
                     (world, col, true)
-                })))
+                }))
+        })
     })
     .await?;
     Ok(())
@@ -196,17 +247,21 @@ async fn refresh_dashboards(ctx: super::Context<'_>) -> bool {
     let db = &ctx.data().db;
     let dashboards = match dashboard::Entity::find().all(db).await {
         Ok(d) => d,
-        Err(e) => { 
+        Err(e) => {
             eprintln!("Warning: Unable to retrieve dashboards from DB: {}", e);
             return false;
-        },
+        }
     };
-    let trains = match train::Entity::find().filter(train::Column::World.ne(World::Testing)).all(db).await {
+    let trains = match train::Entity::find()
+        .filter(train::Column::World.ne(World::Testing))
+        .all(db)
+        .await
+    {
         Ok(t) => t,
-        Err(e) => { 
+        Err(e) => {
             eprintln!("Warning: Unable to retrieve trains from DB: {}", e);
             return false;
-        },
+        }
     };
 
     let tasks: FuturesUnordered<_> = dashboards
@@ -259,7 +314,9 @@ fn monitor_msg(base: String, success: bool) -> String {
         format!("{}.", base)
     } else {
         format!(
-                "Error: {}, but not all monitor posts could be updated.", base)
+            "Error: {}, but not all monitor posts could be updated.",
+            base
+        )
     }
 }
 
@@ -290,7 +347,11 @@ pub async fn scout(
         Some(url) => format!("[scouted]({})", url),
         None => "scouted".to_owned(),
     };
-    ctx.say(monitor_msg(format!("{} {} Train has been {}", world, expac, scout_text), success)).await?;
+    ctx.say(monitor_msg(
+        format!("{} {} Train has been {}", world, expac, scout_text),
+        success,
+    ))
+    .await?;
 
     Ok(())
 }
@@ -321,7 +382,11 @@ pub async fn start(
 
     ctx.defer().await?;
     let success = refresh_monitors(ctx, &train).await && refresh_dashboards(ctx).await;
-    ctx.say(monitor_msg(format!("{} {} Train is now running", world, expac), success)).await?;
+    ctx.say(monitor_msg(
+        format!("{} {} Train is now running", world, expac),
+        success,
+    ))
+    .await?;
 
     Ok(())
 }
@@ -357,7 +422,16 @@ pub async fn done(
 
     ctx.defer().await?;
     let success = refresh_monitors(ctx, &train).await && refresh_dashboards(ctx).await;
-    ctx.say(monitor_msg(format!("{} {} Train completed at <t:{}:f>", world, expac, last_run_time.timestamp()), success)).await?;
+    ctx.say(monitor_msg(
+        format!(
+            "{} {} Train completed at <t:{}:f>",
+            world,
+            expac,
+            last_run_time.timestamp()
+        ),
+        success,
+    ))
+    .await?;
 
     Ok(())
 }

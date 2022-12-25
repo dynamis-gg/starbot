@@ -1,9 +1,9 @@
 mod command;
 
 use eyre::WrapErr;
-use sea_orm_migration::MigratorTrait;
 use poise::serenity_prelude::UserId;
 use sea_orm::Database;
+use sea_orm_migration::MigratorTrait;
 use serenity::model::id::GuildId;
 use serenity::prelude::*;
 use std::env;

@@ -16,7 +16,20 @@ pub enum Table {
     Dashboards,
 }
 
-#[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr)]
+#[derive(
+    Copy,
+    Clone,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Hash,
+    Display,
+    Debug,
+    EnumIter,
+    EnumString,
+    AsRefStr,
+)]
 #[strum(ascii_case_insensitive)]
 pub enum World {
     Halicarnassus,
@@ -123,7 +136,19 @@ impl sea_query::ValueType for World {
     }
 }
 #[derive(
-    Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash, Display, Debug, EnumIter, EnumString, AsRefStr, FromRepr,
+    Copy,
+    Clone,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Hash,
+    Display,
+    Debug,
+    EnumIter,
+    EnumString,
+    AsRefStr,
+    FromRepr,
 )]
 #[repr(i8)]
 #[strum(ascii_case_insensitive)]

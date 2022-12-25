@@ -1,7 +1,7 @@
 use sea_orm_migration::prelude::*;
 
-use entity::train::Column as Trains;
 use entity::monitor::Column as Monitors;
+use entity::train::Column as Trains;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -11,11 +11,7 @@ impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let trains = Table::create()
             .table(entity::Table::Trains)
-            .col(
-                ColumnDef::new(Trains::Id)
-                    .integer()
-                    .primary_key(),
-            )
+            .col(ColumnDef::new(Trains::Id).integer().primary_key())
             .col(ColumnDef::new(Trains::World).text().not_null())
             .col(ColumnDef::new(Trains::Expac).integer().not_null())
             .col(ColumnDef::new(Trains::Status).integer().not_null())
@@ -31,11 +27,8 @@ impl MigrationTrait for Migration {
 
         let monitors = Table::create()
             .table(entity::Table::Monitors)
-            .col(
-                ColumnDef::new(Monitors::Id).integer().primary_key(),
-                )
+            .col(ColumnDef::new(Monitors::Id).integer().primary_key())
             .col(ColumnDef::new(Monitors::MessageId).integer().not_null())
-            
             .col(ColumnDef::new(Monitors::ChannelId).integer().not_null())
             .col(ColumnDef::new(Monitors::TrainId).integer().not_null())
             .to_owned();
@@ -54,8 +47,9 @@ impl MigrationTrait for Migration {
             .drop_table(Table::drop().table(entity::Table::Trains).to_owned())
             .await?;
         manager
-            .drop_table(Table::drop().table(entity::Table::Monitors).to_owned()).await?;
-        
+            .drop_table(Table::drop().table(entity::Table::Monitors).to_owned())
+            .await?;
+
         Ok(())
     }
 }

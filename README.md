@@ -1,2 +1,2 @@
-Support bot for [DESU](https://xiv-desu.github.io/) and [Starbird
+Support bot for [DESU](https://dynamis.gg/) and [Starbird
 Hunts](https://discord.gg/dynamishunts).
